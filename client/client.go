@@ -22,6 +22,12 @@ type DollarQuote struct {
 const requestTimeout = 300 * time.Millisecond
 
 func main() {
+	dollarQuote := getDollarQuote()
+
+	createFile("cotacao.txt", dollarQuote.Bid)
+}
+
+func getDollarQuote() DollarQuote {
 	ctx, cancel := context.WithTimeout(context.Background(), requestTimeout)
 	defer cancel()
 
@@ -48,11 +54,12 @@ func main() {
 		panic(err)
 	}
 
-	createFile("cotacao.txt", dollarQuote.Bid)
+	return dollarQuote
 }
 
 func createFile(fileName string, content string) {
 	f, err := os.Create(fileName)
+	defer f.Close()
 	if err != nil {
 		panic(err)
 	}
@@ -63,5 +70,4 @@ func createFile(fileName string, content string) {
 	}
 
 	fmt.Printf("Arquivo criado com sucesso! Tamanho %v bytes\n", size)
-	f.Close()
 }

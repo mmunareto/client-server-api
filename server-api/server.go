@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 	"io"
@@ -15,10 +16,10 @@ var (
 )
 
 type DollarQuoteResponse struct {
-	Type Details `json:"USDBRL"`
+	Type DetailsResponse `json:"USDBRL"`
 }
 
-type Details struct {
+type DetailsResponse struct {
 	Code       string `json:"code"`
 	Codein     string `json:"codein"`
 	Name       string `json:"name"`
@@ -33,8 +34,18 @@ type Details struct {
 }
 
 type DollarQuote struct {
-	Name string `gorm:"primaryKey"`
-	Bid  string `json:"bid"`
+	ID         int    `gorm:"primaryKey"`
+	Code       string `json:"code"`
+	Codein     string `json:"codein"`
+	Name       string `json:"name"`
+	High       string `json:"high"`
+	Low        string `json:"low"`
+	VarBid     string `json:"varBid"`
+	PctChange  string `json:"pctChange"`
+	Bid        string `json:"bid"`
+	Ask        string `json:"ask"`
+	Timestamp  string `json:"timestamp"`
+	CreateDate string `json:"create_date"`
 }
 
 const (
@@ -45,19 +56,30 @@ const (
 func main() {
 	println("Server started!")
 	http.HandleFunc("/cotacao", getDollarQuote)
-	http.ListenAndServe(":8080", nil)
+	if err := http.ListenAndServe(":8080", nil); err != nil {
+		panic(err)
+	}
 }
 
 func getDollarQuote(w http.ResponseWriter, r *http.Request) {
 	println("Getting a new dollar quote")
-	ctx, cancel := context.WithTimeout(r.Context(), requestTimeout)
-	defer cancel()
-
+	ctx := r.Context()
 	dollarQuoteResponse := makeRequestDollarQuote(ctx)
+	details := dollarQuoteResponse.Type
 	dollarQuote := &DollarQuote{
-		Bid: dollarQuoteResponse.Type.Bid,
+		Code:       details.Code,
+		Codein:     details.Codein,
+		Name:       details.Name,
+		High:       details.High,
+		Low:        details.Low,
+		VarBid:     details.VarBid,
+		PctChange:  details.PctChange,
+		Bid:        details.Bid,
+		Ask:        details.Ask,
+		Timestamp:  details.Timestamp,
+		CreateDate: details.CreateDate,
 	}
-	saveQuote(dollarQuote)
+	saveQuote(ctx, dollarQuote)
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
@@ -70,6 +92,9 @@ func getDollarQuote(w http.ResponseWriter, r *http.Request) {
 
 func makeRequestDollarQuote(ctx context.Context) DollarQuoteResponse {
 	println("Fetching dollar quote from external API")
+	ctx, cancel := context.WithTimeout(ctx, requestTimeout)
+	defer cancel()
+
 	req, err := http.NewRequestWithContext(ctx, "GET", dollarQuoteURL, nil)
 	if err != nil {
 		panic(err)
@@ -93,12 +118,16 @@ func makeRequestDollarQuote(ctx context.Context) DollarQuoteResponse {
 	return dollarQuoteResponse
 }
 
-func saveQuote(quote *DollarQuote) {
-	ctx, cancel := context.WithTimeout(context.Background(), dbTimeout)
+func saveQuote(ctx context.Context, quote *DollarQuote) {
+	ctx, cancel := context.WithTimeout(ctx, dbTimeout)
 	defer cancel()
 
 	db := initDatabase()
 	db.WithContext(ctx).Save(&quote)
+
+	var dollarQuoteSaved DollarQuote
+	db.Find(&dollarQuoteSaved)
+	fmt.Printf("DollarQuote saved: %v\n", dollarQuoteSaved)
 }
 
 func initDatabase() (db *gorm.DB) {
@@ -107,7 +136,10 @@ func initDatabase() (db *gorm.DB) {
 	if err != nil {
 		panic(err)
 	}
-	db.AutoMigrate(DollarQuote{})
+	err = db.AutoMigrate(DollarQuote{})
+	if err != nil {
+		panic(err)
+	}
 
 	return db
 }
